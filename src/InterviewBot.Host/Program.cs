@@ -1,3 +1,5 @@
+using InterviewBot.Host.Telegram;
+using InterviewBot.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Serilog;
 
@@ -19,6 +21,9 @@ try
 
     builder.Services.AddHealthChecks()
         .AddNpgSql(postgresConnectionString, name: "postgres", tags: ["ready"]);
+
+    builder.Services.AddTelegram(builder.Configuration);
+    builder.Services.AddHostedService<TelegramPollingService>();
 
     var app = builder.Build();
 
