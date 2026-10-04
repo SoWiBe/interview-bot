@@ -62,6 +62,8 @@ public static class DependencyInjection
         // HttpClient через фабрику: пул хендлеров и DNS-ротация вместо new HttpClient() на каждый вызов.
         // Таймаут больше long polling, иначе каждый пустой getUpdates падал бы по таймауту.
         services.AddHttpClient("telegram", client => client.Timeout = TimeSpan.FromSeconds(100))
+            // токен бота — часть URL (/bot<token>/method): стандартный логгер HttpClient записал бы его в логи
+            .RemoveAllLoggers()
             .AddTypedClient<ITelegramBotClient>((httpClient, sp) =>
                 new TelegramBotClient(sp.GetRequiredService<IOptions<TelegramOptions>>().Value.BotToken, httpClient));
 

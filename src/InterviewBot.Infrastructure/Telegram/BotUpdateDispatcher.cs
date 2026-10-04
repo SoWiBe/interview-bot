@@ -147,7 +147,6 @@ public sealed class BotUpdateDispatcher(
     {
         var settings = await settingsService.RegisterAsync(message.From!.Id, message.Chat.Id, cancellationToken);
         await scheduler.EnsureScheduledAsync(settings, cancellationToken);
-        await bot.SetMyCommands(Commands, cancellationToken: cancellationToken);
 
         logger.LogInformation("User {UserId} registered in chat {ChatId}", settings.TelegramUserId, settings.ChatId);
         await messenger.SendTextAsync(
@@ -155,6 +154,24 @@ public sealed class BotUpdateDispatcher(
             $"Привет! Я твой помощник для подготовки к собеседованиям.\n\n" +
             $"Набор приходит каждый день в {settings.SendTime:HH\\:mm} ({settings.TimeZoneId}). Хочешь начать прямо сейчас — /today.\n\n{HelpText}",
             cancellationToken);
+
+        // меню команд — удобство, а не обязательная часть регистрации: его сбой не должен ломать /start
+        await TryRegisterCommandsAsync(bot, logger, cancellationToken);
+    }
+
+    /// <summary>Регистрирует меню команд в Telegram. Ошибку только логирует: команды работают и без меню.</summary>
+    public static async Task<bool> TryRegisterCommandsAsync(ITelegramBotClient bot, ILogger logger, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await bot.SetMyCommands(Commands, cancellationToken: cancellationToken);
+            return true;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Failed to register bot commands menu");
+            return false;
+        }
     }
 
     private async Task TodayAsync(UserSettings settings, CancellationToken cancellationToken)
