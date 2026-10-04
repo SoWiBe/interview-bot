@@ -1,5 +1,6 @@
 using System.ClientModel;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using Anthropic;
 using InterviewBot.Infrastructure.Common;
 using InterviewBot.Infrastructure.Content;
@@ -64,6 +65,7 @@ public static class DependencyInjection
         services.AddHttpClient("telegram", client => client.Timeout = TimeSpan.FromSeconds(100))
             // токен бота — часть URL (/bot<token>/method): стандартный логгер HttpClient записал бы его в логи
             .RemoveAllLoggers()
+            .ConfigurePrimaryHttpMessageHandler(CreateTelegramHandler)
             .AddTypedClient<ITelegramBotClient>((httpClient, sp) =>
                 new TelegramBotClient(sp.GetRequiredService<IOptions<TelegramOptions>>().Value.BotToken, httpClient));
 
@@ -71,6 +73,37 @@ public static class DependencyInjection
         services.AddScoped<BotUpdateDispatcher>();
         services.AddSingleton<PollingHeartbeat>();
     }
+
+    /// <summary>
+    /// Соединения с Telegram подолгу молчат (long polling 30 с, пауза на генерацию ответа), и где-то по пути
+    /// (NAT Docker Desktop, провайдер) их молча рвут — следующий запрос получает «response ended prematurely».
+    /// TCP keep-alive держит соединение «живым» для промежуточных узлов, а короткий idle timeout пула
+    /// не даёт переиспользовать соединение, которое уже могли закрыть.
+    /// </summary>
+    private static SocketsHttpHandler CreateTelegramHandler() => new()
+    {
+        PooledConnectionIdleTimeout = TimeSpan.FromSeconds(10),
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        ConnectCallback = async (context, cancellationToken) =>
+        {
+            var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+            try
+            {
+                socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 15);
+                socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 5);
+                socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, 3);
+
+                await socket.ConnectAsync(context.DnsEndPoint, cancellationToken);
+                return new NetworkStream(socket, ownsSocket: true);
+            }
+            catch
+            {
+                socket.Dispose();
+                throw;
+            }
+        },
+    };
 
     private static void AddContentGeneration(this IServiceCollection services, IConfiguration configuration)
     {

@@ -67,7 +67,7 @@ internal sealed class TelegramDigestPartSender(
                 break;
 
             case DigestPart.Tasks:
-                var header = digest.TheoryHtml is null ? "Задача-повторение" : null;
+                var header = digest.TheoryHtml is null ? MessageRenderer.ReviewTaskHeader : null;
                 // по одной задаче на сообщение: reply на сообщение однозначно указывает на задачу
                 foreach (var task in digest.Tasks.OrderBy(t => t.OrderInDigest).Where(t => t.SentAt is null))
                 {

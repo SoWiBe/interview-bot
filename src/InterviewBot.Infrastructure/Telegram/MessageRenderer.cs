@@ -42,6 +42,8 @@ public static class MessageRenderer
         return string.Join(BlockSeparator, blocks);
     }
 
+    public const string ReviewTaskHeader = "Задача-повторение";
+
     public static IReadOnlyList<string> Task(PracticeTask task, int number, string? header = null)
     {
         var language = task.Language == TaskLanguage.Sql ? "SQL" : "C#";
@@ -49,6 +51,13 @@ public static class MessageRenderer
         {
             $"🧩 {Bold($"{header ?? $"Задача {number}"} · {language}")} — {Escape(task.Title)}",
         };
+
+        if (header == ReviewTaskHeader)
+        {
+            blocks.Add(Italic("Выходной: одна задача на повторение, без новой теории. Полный набор — в понедельник утром, " +
+                              "а прямо сейчас можно взять тему: /topic <название>"));
+        }
+
         blocks.AddRange(FromMarkdownLite(task.Statement));
         blocks.Add(Escape(TimerLine));
         blocks.Add(Italic("Ответь reply на это сообщение: вопросы + решение. Сдаться — /giveup"));
@@ -102,17 +111,48 @@ public static class MessageRenderer
 
     private static string CodeLanguage(TaskLanguage language) => language == TaskLanguage.Sql ? "sql" : "csharp";
 
-    public static InlineKeyboardMarkup FeedbackKeyboard(Guid digestId) => new(
-    [
-        [
-            InlineKeyboardButton.WithCallbackData("✅ Понял", CallbackData.Feedback(digestId, TopicFeedback.Understood)),
-            InlineKeyboardButton.WithCallbackData("🔁 Повторить", CallbackData.Feedback(digestId, TopicFeedback.Repeat)),
-            InlineKeyboardButton.WithCallbackData("❌ Пробел", CallbackData.Feedback(digestId, TopicFeedback.Gap)),
-        ],
-    ]);
+    public static InlineKeyboardMarkup FeedbackKeyboard(Guid digestId) => new([FeedbackRow(digestId)]);
 
-    public static InlineKeyboardMarkup SolutionKeyboard(Guid taskId) =>
-        new([[InlineKeyboardButton.WithCallbackData("👀 Показать решение", CallbackData.Solution(taskId))]]);
+    /// <summary>
+    /// Кнопки под ревью и под решением: что делать дальше.
+    /// <paramref name="solutionTaskId"/> — показать «Решение»; <paramref name="feedbackDigestId"/> — оценить тему
+    /// (нужно, когда теории не было и кнопок под ней тоже, например у выходной задачи).
+    /// </summary>
+    public static InlineKeyboardMarkup NextStepsKeyboard(Guid? solutionTaskId = null, Guid? feedbackDigestId = null)
+    {
+        var rows = new List<InlineKeyboardButton[]>();
+
+        if (solutionTaskId is { } taskId)
+        {
+            rows.Add([InlineKeyboardButton.WithCallbackData("👀 Показать решение", CallbackData.Solution(taskId))]);
+        }
+
+        if (feedbackDigestId is { } digestId)
+        {
+            rows.Add(FeedbackRow(digestId));
+        }
+
+        rows.Add(
+        [
+            InlineKeyboardButton.WithCallbackData("➕ Ещё задача", CallbackData.NextTask),
+            InlineKeyboardButton.WithCallbackData("📚 Новая тема", CallbackData.NewTopic),
+        ]);
+
+        return new InlineKeyboardMarkup(rows);
+    }
+
+    private static InlineKeyboardButton[] FeedbackRow(Guid digestId) =>
+    [
+        InlineKeyboardButton.WithCallbackData("✅ Понял", CallbackData.Feedback(digestId, TopicFeedback.Understood)),
+        InlineKeyboardButton.WithCallbackData("🔁 Повторить", CallbackData.Feedback(digestId, TopicFeedback.Repeat)),
+        InlineKeyboardButton.WithCallbackData("❌ Пробел", CallbackData.Feedback(digestId, TopicFeedback.Gap)),
+    ];
+
+    /// <summary>Подсказка о нерешённой задаче из того же набора.</summary>
+    public static string PendingTaskHint(PracticeTask pending) =>
+        $"👉 Ещё ждёт: {Bold($"Задача {pending.OrderInDigest}")} — {Escape(pending.Title)}. Ответь reply на её сообщение выше.";
+
+    public static string FeedbackPrompt => $"{Bold("Как тема?")} Отметь — от этого зависит, когда она вернётся на повторение.";
 
     public static string FeedbackLabel(TopicFeedback feedback) => feedback switch
     {
@@ -128,6 +168,9 @@ public static class CallbackData
 {
     private const string FeedbackPrefix = "fb";
     private const string SolutionPrefix = "sol";
+
+    public const string NextTask = "next";
+    public const string NewTopic = "newtopic";
 
     public static string Feedback(Guid digestId, TopicFeedback feedback) => $"{FeedbackPrefix}:{digestId:N}:{(int)feedback}";
 

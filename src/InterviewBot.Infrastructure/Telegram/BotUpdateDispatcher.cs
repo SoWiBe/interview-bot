@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Telegram.Bot;
 using Telegram.Bot.Types;
+using Telegram.Bot.Types.ReplyMarkups;
 using static InterviewBot.Infrastructure.Telegram.TelegramHtml;
 
 namespace InterviewBot.Infrastructure.Telegram;
@@ -46,7 +47,12 @@ public sealed class BotUpdateDispatcher(
     private const string HelpText = """
         Каждое утро присылаю теорию по одной теме, фрагмент кода из реального open-source проекта и задачи в формате live coding.
 
-        Как решать задачу: ответь reply на сообщение с задачей — сначала уточняющие вопросы, потом решение. Я сделаю ревью.
+        Как проходит день:
+        1. Теория — прочитай и отметь тему кнопкой: ✅ Понял (повторим через 3 → 7 → 21 день), 🔁 Повторить (завтра), ❌ Пробел (в начало очереди).
+        2. Код из реального проекта — разбор приёма, который стоит забрать себе.
+        3. Две задачи отдельными сообщениями. Решаешь каждую reply на её сообщение: сначала уточняющие вопросы, потом решение. Я сделаю ревью.
+        4. Под ревью — «Показать решение», «Ещё задача», «Новая тема».
+        В выходные по умолчанию одна задача на повторение без теории (/settings weekend full — полный набор).
 
         /today — утренний набор сейчас
         /next — ещё задача по текущей теме
@@ -193,11 +199,21 @@ public sealed class BotUpdateDispatcher(
 
     private async Task NextAsync(UserSettings settings, CancellationToken cancellationToken)
     {
+        await messenger.SendTextAsync(settings.ChatId, "⏳ Готовлю ещё задачу по текущей теме…", cancellationToken);
         var task = await practice.SendNextTaskAsync(settings, cancellationToken);
         if (task is null)
         {
             await messenger.SendTextAsync(settings.ChatId, "Пока нет текущей темы. Начни с /today или /topic", cancellationToken);
         }
+    }
+
+    /// <summary>«📚 Новая тема»: следующая тема из очереди — полный набор с теорией и задачами.</summary>
+    private async Task NewTopicAsync(UserSettings settings, CancellationToken cancellationToken)
+    {
+        var topic = await digests.SelectNextTopicAsync(settings, cancellationToken);
+        await messenger.SendTextAsync(settings.ChatId, $"⏳ Готовлю тему «{topic.Title}», это займёт пару минут…", cancellationToken);
+        await messenger.TypingAsync(settings.ChatId, cancellationToken);
+        await digests.RunManualAsync(settings, topic, cancellationToken);
     }
 
     private async Task TopicAsync(UserSettings settings, string query, CancellationToken cancellationToken)
@@ -344,31 +360,67 @@ public sealed class BotUpdateDispatcher(
             };
 
             await bot.AnswerCallbackQuery(callback.Id, answer, cancellationToken: cancellationToken);
-            await RemoveKeyboardAsync(callback, cancellationToken);
+            await RemovePressedRowAsync(callback, cancellationToken);
             return;
         }
 
         if (CallbackData.TryParseSolution(data, out var taskId))
         {
             await bot.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
+            await RemovePressedRowAsync(callback, cancellationToken);
+
             var task = await practice.GetTaskAsync(taskId, cancellationToken);
             if (task is not null)
             {
                 await practice.RevealSolutionAsync(settings.ChatId, task, cancellationToken);
             }
 
-            await RemoveKeyboardAsync(callback, cancellationToken);
+            return;
+        }
+
+        if (data is CallbackData.NextTask or CallbackData.NewTopic)
+        {
+            await bot.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
+            // Убираем кнопки до генерации: повторное нажатие во время долгого запроса не запустит её второй раз
+            await RemovePressedRowAsync(callback, cancellationToken);
+
+            await (data == CallbackData.NextTask
+                ? NextAsync(settings, cancellationToken)
+                : NewTopicAsync(settings, cancellationToken));
             return;
         }
 
         await bot.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
     }
 
-    private async Task RemoveKeyboardAsync(CallbackQuery callback, CancellationToken cancellationToken)
+    /// <summary>
+    /// Убирает с сообщения ряд кнопок, в котором нажали кнопку; остальные ряды остаются
+    /// (например, после «Показать решение» остаются «Ещё задача» и «Новая тема»).
+    /// Сбой редактирования не критичен — только логируем.
+    /// </summary>
+    private async Task RemovePressedRowAsync(CallbackQuery callback, CancellationToken cancellationToken)
     {
-        if (callback.Message is { } message)
+        if (callback.Message is not { } message)
         {
-            await bot.EditMessageReplyMarkup(message.Chat.Id, message.MessageId, replyMarkup: null, cancellationToken: cancellationToken);
+            return;
+        }
+
+        var remaining = (message.ReplyMarkup?.InlineKeyboard ?? [])
+            .Where(row => !row.Any(button => button.CallbackData == callback.Data))
+            .Select(row => row.ToArray())
+            .ToList();
+
+        try
+        {
+            await bot.EditMessageReplyMarkup(
+                message.Chat.Id,
+                message.MessageId,
+                replyMarkup: remaining.Count > 0 ? new InlineKeyboardMarkup(remaining) : null,
+                cancellationToken: cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Failed to update keyboard of message {MessageId}", message.MessageId);
         }
     }
 
