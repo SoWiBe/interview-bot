@@ -42,6 +42,7 @@ public sealed class PracticeService(
         var view = new PracticeTaskView(
             task.Language == TaskLanguage.Sql ? "sql" : "csharp", task.Statement, task.ExpectedQuestions, task.ReferenceSolution);
         var review = await generator.ReviewAttemptAsync(view, answer, cancellationToken);
+        var reviewMessages = MessageRenderer.Review(review, task.Language);
 
         db.TaskAttempts.Add(new TaskAttempt
         {
@@ -51,21 +52,55 @@ public sealed class PracticeService(
             Answer = answer,
             AskedClarifyingQuestions = review.AskedClarifyingQuestions,
             Score = Math.Clamp(review.Score, 1, 5),
-            ReviewHtml = string.Join(TelegramHtml.BlockSeparator, MessageRenderer.Review(review)),
+            ReviewHtml = string.Join(TelegramHtml.BlockSeparator, reviewMessages),
         });
         await db.SaveChangesAsync(cancellationToken);
         await progress.MarkActiveAsync(clock.Today(settings.TimeZoneId), cancellationToken);
 
-        var keyboard = task.SolutionRevealedAt is null ? MessageRenderer.SolutionKeyboard(task.Id) : null;
-        await messenger.SendHtmlAsync(settings.ChatId, MessageRenderer.Review(review), keyboard, cancellationToken);
+        var messages = reviewMessages.ToList();
+        if (await FindPendingTaskAsync(task, cancellationToken) is { } pending)
+        {
+            messages.Add(MessageRenderer.PendingTaskHint(pending));
+        }
+
+        var keyboard = MessageRenderer.NextStepsKeyboard(solutionTaskId: task.SolutionRevealedAt is null ? task.Id : null);
+        await messenger.SendHtmlAsync(settings.ChatId, messages, keyboard, cancellationToken);
     }
 
     public async Task RevealSolutionAsync(long chatId, PracticeTask task, CancellationToken cancellationToken)
     {
         task.SolutionRevealedAt ??= clock.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
-        await messenger.SendHtmlAsync(chatId, MessageRenderer.Solution(task), null, cancellationToken);
+
+        var messages = MessageRenderer.Solution(task).ToList();
+
+        // Набор без теории (выходная задача) — кнопок оценки темы ещё не было: даём их здесь
+        Guid? feedbackDigestId = null;
+        if (task.DigestId is { } digestId
+            && await db.Digests.AnyAsync(d => d.Id == digestId && d.TheoryHtml == null && d.Feedback == null, cancellationToken))
+        {
+            feedbackDigestId = digestId;
+            messages.Add(MessageRenderer.FeedbackPrompt);
+        }
+
+        if (await FindPendingTaskAsync(task, cancellationToken) is { } pending)
+        {
+            messages.Add(MessageRenderer.PendingTaskHint(pending));
+        }
+
+        await messenger.SendHtmlAsync(
+            chatId, messages, MessageRenderer.NextStepsKeyboard(feedbackDigestId: feedbackDigestId), cancellationToken);
     }
+
+    /// <summary>Другая задача того же набора, к которой ещё не приступали.</summary>
+    private Task<PracticeTask?> FindPendingTaskAsync(PracticeTask task, CancellationToken cancellationToken) =>
+        task.DigestId is null
+            ? Task.FromResult<PracticeTask?>(null)
+            : db.PracticeTasks
+                .Where(t => t.DigestId == task.DigestId && t.Id != task.Id && t.SentAt != null
+                    && t.SolutionRevealedAt == null && !t.Attempts.Any())
+                .OrderBy(t => t.OrderInDigest)
+                .FirstOrDefaultAsync(cancellationToken);
 
     public Task<PracticeTask?> GetTaskAsync(Guid taskId, CancellationToken cancellationToken) =>
         db.PracticeTasks.FirstOrDefaultAsync(t => t.Id == taskId, cancellationToken);

@@ -1,4 +1,6 @@
+using System.ClientModel;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using Anthropic;
 using InterviewBot.Infrastructure.Common;
 using InterviewBot.Infrastructure.Content;
@@ -15,6 +17,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenAI;
+using OpenAI.Chat;
 using Quartz;
 using Telegram.Bot;
 
@@ -59,6 +63,9 @@ public static class DependencyInjection
         // HttpClient через фабрику: пул хендлеров и DNS-ротация вместо new HttpClient() на каждый вызов.
         // Таймаут больше long polling, иначе каждый пустой getUpdates падал бы по таймауту.
         services.AddHttpClient("telegram", client => client.Timeout = TimeSpan.FromSeconds(100))
+            // токен бота — часть URL (/bot<token>/method): стандартный логгер HttpClient записал бы его в логи
+            .RemoveAllLoggers()
+            .ConfigurePrimaryHttpMessageHandler(CreateTelegramHandler)
             .AddTypedClient<ITelegramBotClient>((httpClient, sp) =>
                 new TelegramBotClient(sp.GetRequiredService<IOptions<TelegramOptions>>().Value.BotToken, httpClient));
 
@@ -67,21 +74,84 @@ public static class DependencyInjection
         services.AddSingleton<PollingHeartbeat>();
     }
 
+    /// <summary>
+    /// Соединения с Telegram подолгу молчат (long polling 30 с, пауза на генерацию ответа), и где-то по пути
+    /// (NAT Docker Desktop, провайдер) их молча рвут — следующий запрос получает «response ended prematurely».
+    /// TCP keep-alive держит соединение «живым» для промежуточных узлов, а короткий idle timeout пула
+    /// не даёт переиспользовать соединение, которое уже могли закрыть.
+    /// </summary>
+    private static SocketsHttpHandler CreateTelegramHandler() => new()
+    {
+        PooledConnectionIdleTimeout = TimeSpan.FromSeconds(10),
+        PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+        ConnectCallback = async (context, cancellationToken) =>
+        {
+            var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+            try
+            {
+                socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
+                socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveTime, 15);
+                socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveInterval, 5);
+                socket.SetSocketOption(SocketOptionLevel.Tcp, SocketOptionName.TcpKeepAliveRetryCount, 3);
+
+                await socket.ConnectAsync(context.DnsEndPoint, cancellationToken);
+                return new NetworkStream(socket, ownsSocket: true);
+            }
+            catch
+            {
+                socket.Dispose();
+                throw;
+            }
+        },
+    };
+
     private static void AddContentGeneration(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddOptions<AnthropicOptions>()
-            .Bind(configuration.GetSection(AnthropicOptions.SectionName))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
+        var provider = configuration.GetSection(ContentOptions.SectionName).Get<ContentOptions>()?.Provider
+            ?? new ContentOptions().Provider;
 
-        // SDK сам ретраит 429/5xx/сетевые ошибки — Polly поверх не вешаем, чтобы не получить ретраи в квадрате
-        services.AddSingleton(sp => new AnthropicClient
+        // Оба SDK сами ретраят 429/5xx/сетевые ошибки — Polly поверх не вешаем, чтобы не получить ретраи в квадрате.
+        // Валидируются настройки только выбранного провайдера: ключ второго не обязателен.
+        switch (provider)
         {
-            ApiKey = sp.GetRequiredService<IOptions<AnthropicOptions>>().Value.ApiKey,
-            MaxRetries = 3,
-            Timeout = TimeSpan.FromMinutes(5),
-        });
-        services.AddSingleton<IContentGenerator, AnthropicContentGenerator>();
+            case ContentProvider.Anthropic:
+                services.AddOptions<AnthropicOptions>()
+                    .Bind(configuration.GetSection(AnthropicOptions.SectionName))
+                    .ValidateDataAnnotations()
+                    .ValidateOnStart();
+
+                services.AddSingleton(sp => new AnthropicClient
+                {
+                    ApiKey = sp.GetRequiredService<IOptions<AnthropicOptions>>().Value.ApiKey,
+                    MaxRetries = 3,
+                    Timeout = TimeSpan.FromMinutes(5),
+                });
+                services.AddSingleton<IContentGenerator, AnthropicContentGenerator>();
+                break;
+
+            case ContentProvider.OpenAICompatible:
+                services.AddOptions<OpenAICompatibleOptions>()
+                    .Bind(configuration.GetSection(OpenAICompatibleOptions.SectionName))
+                    .ValidateDataAnnotations()
+                    .ValidateOnStart();
+
+                services.AddSingleton(sp =>
+                {
+                    var o = sp.GetRequiredService<IOptions<OpenAICompatibleOptions>>().Value;
+                    return new ChatClient(o.Model, new ApiKeyCredential(o.ApiKey), new OpenAIClientOptions
+                    {
+                        Endpoint = new Uri(o.BaseUrl),
+                        // генерация набора с размышлениями модели может идти дольше дефолтных 100 секунд
+                        NetworkTimeout = TimeSpan.FromMinutes(5),
+                        UserAgentApplicationId = "interview-bot",
+                    });
+                });
+                services.AddSingleton<IContentGenerator, OpenAICompatibleContentGenerator>();
+                break;
+
+            default:
+                throw new InvalidOperationException($"Unknown content provider '{provider}'");
+        }
     }
 
     private static void AddGitHub(this IServiceCollection services, IConfiguration configuration)

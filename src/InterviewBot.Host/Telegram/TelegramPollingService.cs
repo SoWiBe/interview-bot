@@ -17,6 +17,7 @@ public sealed class TelegramPollingService(
     PollingHeartbeat heartbeat,
     ILogger<TelegramPollingService> logger) : BackgroundService
 {
+    private const int MaxCommandAttempts = 5;
     private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(60);
     private static readonly UpdateType[] AllowedUpdates = [UpdateType.Message, UpdateType.CallbackQuery];
 
@@ -24,6 +25,8 @@ public sealed class TelegramPollingService(
     {
         int? offset = null;
         var consecutiveFailures = 0;
+        var commandsRegistered = false;
+        var commandAttempts = 0;
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -39,6 +42,13 @@ public sealed class TelegramPollingService(
                     cancellationToken: stoppingToken);
                 consecutiveFailures = 0;
                 heartbeat.Beat();
+
+                // меню команд регистрируем, как только связь с Telegram есть; не вышло — ещё несколько попыток
+                // на следующих итерациях, но не бесконечно, чтобы не тормозить polling
+                if (!commandsRegistered && commandAttempts++ < MaxCommandAttempts)
+                {
+                    commandsRegistered = await BotUpdateDispatcher.TryRegisterCommandsAsync(bot, logger, stoppingToken);
+                }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

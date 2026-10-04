@@ -25,7 +25,7 @@ internal static class ContentSchemas
         }
         """;
 
-    public static readonly Dictionary<string, JsonElement> DailyContent = Parse($$"""
+    public static readonly ContentSchema DailyContent = new("daily_content", $$"""
         {
           "type": "object",
           "additionalProperties": false,
@@ -49,7 +49,7 @@ internal static class ContentSchemas
         }
         """);
 
-    public static readonly Dictionary<string, JsonElement> Tasks = Parse($$"""
+    public static readonly ContentSchema Tasks = new("tasks", $$"""
         {
           "type": "object",
           "additionalProperties": false,
@@ -60,7 +60,7 @@ internal static class ContentSchemas
         }
         """);
 
-    public static readonly Dictionary<string, JsonElement> SnippetSelection = Parse("""
+    public static readonly ContentSchema SnippetSelection = new("snippet_selection", """
         {
           "type": "object",
           "additionalProperties": false,
@@ -75,7 +75,7 @@ internal static class ContentSchemas
         }
         """);
 
-    public static readonly Dictionary<string, JsonElement> AttemptReview = Parse("""
+    public static readonly ContentSchema AttemptReview = new("attempt_review", """
         {
           "type": "object",
           "additionalProperties": false,
@@ -93,8 +93,12 @@ internal static class ContentSchemas
           }
         }
         """);
+}
 
-    private static Dictionary<string, JsonElement> Parse(string json) =>
-        JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json)
-        ?? throw new InvalidOperationException("Invalid schema");
+/// <summary>JSON-схема ответа: имя (нужно OpenAI-совместимым API) и сам текст схемы.</summary>
+public sealed record ContentSchema(string Name, string Json)
+{
+    public Dictionary<string, JsonElement> ToDictionary() =>
+        JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(Json)
+        ?? throw new InvalidOperationException($"Invalid schema {Name}");
 }

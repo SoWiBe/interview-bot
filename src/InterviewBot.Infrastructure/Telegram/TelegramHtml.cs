@@ -16,7 +16,15 @@ public static partial class TelegramHtml
     /// <summary>Разделитель блоков в сохранённом HTML: по нему упаковщик может резать сообщение, не ломая теги.</summary>
     public const char BlockSeparator = '\u001e';
 
-    public static string Escape(string text) => WebUtility.HtmlEncode(text);
+    /// <summary>
+    /// Telegram требует экранировать только &lt; &gt; &amp; и кавычки. HtmlEncode не подходит:
+    /// он превращает эмодзи и «·» в числовые сущности и раздувает сообщение.
+    /// </summary>
+    public static string Escape(string text) => text
+        .Replace("&", "&amp;")
+        .Replace("<", "&lt;")
+        .Replace(">", "&gt;")
+        .Replace("\"", "&quot;");
 
     public static string Bold(string text) => $"<b>{Escape(text)}</b>";
 

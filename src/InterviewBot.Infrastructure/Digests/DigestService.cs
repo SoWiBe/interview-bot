@@ -65,6 +65,10 @@ public sealed class DigestService(
         db.Digests.AnyAsync(d => d.Kind == DigestKind.Daily && d.ForDate == day, cancellationToken);
 
     /// <summary>/topic: внеочередная тема, полный набор, без влияния на утренний.</summary>
+    /// <summary>Следующая тема из обычной очереди (пробелы → повторения → новые), кроме показанных сегодня и вчера.</summary>
+    public Task<Topic> SelectNextTopicAsync(UserSettings settings, CancellationToken cancellationToken) =>
+        SelectTopicAsync(DailyPlan.Full, clock.Today(settings.TimeZoneId), cancellationToken);
+
     public async Task<Digest> RunManualAsync(UserSettings settings, Topic topic, CancellationToken cancellationToken)
     {
         var today = clock.Today(settings.TimeZoneId);
