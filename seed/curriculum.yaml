@@ -1,0 +1,303 @@
+# Учебная программа бота. Редактируется руками, применяется при старте сервиса.
+#
+# id        — стабильный ключ темы; не меняй у существующих тем, иначе потеряется прогресс
+# priority  — 1 (важнее) .. 3
+# status    — начальный статус (new | gap | repeat | understood); применяется ТОЛЬКО при первом
+#             появлении темы, дальше статус живёт в БД и меняется кнопками
+# codeRefs  — откуда брать фрагмент кода: repo, path (от корня репозитория), symbol (строка, рядом с
+#             которой искать фрагмент). Пути проверены на момент написания; если файл переедет,
+#             блок «код из репозитория» для темы просто пропустится.
+#
+# Удалённая из файла тема не удаляется из БД, а помечается неактивной (прогресс сохраняется).
+
+modules:
+  - number: 1
+    title: Многопоточность и async
+    priority: 1
+    topics:
+      - id: threading.interlocked
+        title: "Атомарность и Interlocked, CompareExchange"
+        status: gap
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/System.Private.CoreLib/src/System/Collections/Concurrent/ConcurrentQueueSegment.cs
+            symbol: "public bool TryEnqueue("
+      - id: threading.lock-monitor
+        title: "lock и Monitor, дедлок и как его воспроизвести"
+        status: gap
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/System.Private.CoreLib/src/System/Threading/Lock.cs
+            symbol: "public Scope EnterScope("
+      - id: threading.semaphoreslim
+        title: "SemaphoreSlim, WaitAsync, ограничение параллелизма"
+        status: gap
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/System.Private.CoreLib/src/System/Threading/SemaphoreSlim.cs
+            symbol: "WaitAsync("
+      - id: threading.concurrent-collections
+        title: "ConcurrentDictionary / Bag / Queue, подводные камни GetOrAdd"
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/System.Private.CoreLib/src/System/Collections/Concurrent/ConcurrentDictionary.cs
+            symbol: "public TValue GetOrAdd("
+      - id: async.internals
+        title: "async/await изнутри: state machine, SynchronizationContext, ConfigureAwait"
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/System.Private.CoreLib/src/System/Runtime/CompilerServices/AsyncTaskMethodBuilderT.cs
+            symbol: "AwaitUnsafeOnCompleted"
+          - repo: dotnet/runtime
+            path: src/libraries/System.Private.CoreLib/src/System/Threading/Tasks/Task.cs
+            symbol: "public ConfiguredTaskAwaitable ConfigureAwait("
+      - id: async.task-vs-valuetask
+        title: "Task vs ValueTask"
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/System.Private.CoreLib/src/System/Threading/Tasks/ValueTask.cs
+            symbol: "public bool IsCompletedSuccessfully"
+      - id: async.cancellation
+        title: "Отмена: CancellationToken, linked CTS, таймауты"
+        status: gap
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/System.Private.CoreLib/src/System/Threading/CancellationTokenSource.cs
+            symbol: "CreateLinkedTokenSource("
+      - id: async.channels
+        title: "Channel<T>, producer-consumer"
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/System.Threading.Channels/src/System/Threading/Channels/BoundedChannel.cs
+            symbol: "TryWrite("
+      - id: async.parallel-foreach
+        title: "Parallel.ForEachAsync vs Task.WhenAll + семафор"
+        status: gap
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/System.Threading.Tasks.Parallel/src/System/Threading/Tasks/Parallel.ForEachAsync.cs
+            symbol: "ForEachAsync<TSource>("
+
+  - number: 2
+    title: Алгоритмы для live coding
+    priority: 1
+    topics:
+      - id: algo.binary-search
+        title: "Бинарный поиск: классика, первое и последнее вхождение, «последний элемент ≤ x»"
+        status: gap
+      - id: algo.two-pointers
+        title: "Два указателя"
+      - id: algo.sliding-window
+        title: "Скользящее окно"
+      - id: algo.hash-tables
+        title: "Хеш-таблицы для O(1)-поиска"
+      - id: algo.complexity-aloud
+        title: "Оценка сложности вслух"
+      - id: algo.edge-cases
+        title: "Краевые случаи: пустой ввод, один элемент, дубли"
+        status: gap
+
+  - number: 3
+    title: SQL и базы данных
+    priority: 1
+    topics:
+      - id: sql.group-by-having
+        title: "GROUP BY, HAVING, COUNT(DISTINCT) и размножение строк в JOIN"
+        status: gap
+      - id: sql.left-join
+        title: "LEFT JOIN и потеря строк"
+      - id: sql.window-functions
+        title: "Оконные функции: ROW_NUMBER, RANK, DENSE_RANK, PARTITION BY"
+        status: gap
+      - id: sql.top-n-per-group
+        title: "Топ-N в группе тремя способами: окно, коррелированный подзапрос, LATERAL"
+        status: gap
+      - id: sql.indexes
+        title: "Индексы: B-tree, составные, покрывающие, порядок колонок"
+      - id: sql.explain-analyze
+        title: "EXPLAIN ANALYZE"
+      - id: sql.isolation-levels
+        title: "Транзакции и уровни изоляции, аномалии"
+        codeRefs:
+          - repo: npgsql/npgsql
+            path: src/Npgsql/NpgsqlTransaction.cs
+            symbol: "public override void Commit("
+      - id: sql.locks
+        title: "Блокировки"
+      - id: sql.mvcc-vacuum
+        title: "MVCC и VACUUM в PostgreSQL"
+      - id: sql.mssql-vs-postgres
+        title: "Отличия MS SQL от PostgreSQL: кластерный индекс, версионность, NOLOCK"
+
+  - number: 4
+    title: ASP.NET Core изнутри
+    priority: 2
+    topics:
+      - id: aspnet.request-lifecycle
+        title: "Жизненный цикл HTTP-запроса: Kestrel → middleware pipeline → routing → endpoint"
+        status: gap
+        codeRefs:
+          - repo: dotnet/aspnetcore
+            path: src/Servers/Kestrel/Core/src/Internal/Http/HttpProtocol.cs
+            symbol: "ProcessRequests<TContext>("
+          - repo: dotnet/aspnetcore
+            path: src/Http/Routing/src/EndpointRoutingMiddleware.cs
+            symbol: "public Task Invoke("
+      - id: aspnet.middleware-order
+        title: "Порядок middleware и почему он важен"
+        codeRefs:
+          - repo: dotnet/aspnetcore
+            path: src/Http/Http/src/Builder/ApplicationBuilder.cs
+            symbol: "public RequestDelegate Build("
+      - id: aspnet.di-lifetimes
+        title: "DI: Singleton / Scoped / Transient, captive dependency"
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/Microsoft.Extensions.DependencyInjection/src/ServiceLookup/CallSiteValidator.cs
+            symbol: "VisitScopeCache"
+      - id: aspnet.options
+        title: "Options pattern и конфигурация для разных контуров"
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/Microsoft.Extensions.Options/src/OptionsMonitor.cs
+            symbol: "public virtual TOptions Get("
+      - id: aspnet.hosted-services
+        title: "IHostedService и BackgroundService"
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/Microsoft.Extensions.Hosting.Abstractions/src/BackgroundService.cs
+            symbol: "StartAsync("
+      - id: aspnet.filters
+        title: "Фильтры"
+        codeRefs:
+          - repo: dotnet/aspnetcore
+            path: src/Mvc/Mvc.Core/src/Infrastructure/ResourceInvoker.cs
+            symbol: "InvokeFilterPipelineAsync("
+      - id: aspnet.exception-handling
+        title: "Обработка исключений"
+        codeRefs:
+          - repo: dotnet/aspnetcore
+            path: src/Middleware/Diagnostics/src/ExceptionHandler/ExceptionHandlerMiddlewareImpl.cs
+            symbol: "public Task Invoke("
+      - id: aspnet.httpclientfactory
+        title: "IHttpClientFactory и проблема socket exhaustion"
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/Microsoft.Extensions.Http/src/DefaultHttpClientFactory.cs
+            symbol: "CreateHandlerEntry("
+
+  - number: 5
+    title: Распределённые системы и брокеры
+    priority: 2
+    topics:
+      - id: dist.rabbitmq
+        title: "RabbitMQ: exchange (direct, topic, fanout), queue, binding, ack/nack, requeue, DLQ, prefetch"
+        codeRefs:
+          - repo: dotnet/eShop
+            path: src/EventBusRabbitMQ/RabbitMQEventBus.cs
+            symbol: "PublishAsync("
+      - id: dist.kafka
+        title: "Kafka: топики, партиции, offset, consumer groups, порядок сообщений"
+        codeRefs:
+          - repo: confluentinc/confluent-kafka-dotnet
+            path: src/Confluent.Kafka/Consumer.cs
+            symbol: "public void Commit("
+      - id: dist.delivery-guarantees
+        title: "Гарантии доставки: at-most-once, at-least-once, exactly-once"
+      - id: dist.idempotent-consumer
+        title: "Идемпотентность консьюмера"
+      - id: dist.outbox-inbox
+        title: "Outbox и inbox"
+        codeRefs:
+          - repo: dotnet/eShop
+            path: src/IntegrationEventLogEF/Services/IntegrationEventLogService.cs
+            symbol: "MarkEventAsPublishedAsync("
+      - id: dist.redis
+        title: "Redis: паттерны кэширования, распределённый лок (SET NX PX + токен владельца), rate limiting"
+        codeRefs:
+          - repo: StackExchange/StackExchange.Redis
+            path: src/StackExchange.Redis/RedisDatabase.cs
+            symbol: "public bool LockTake("
+      - id: dist.resilience
+        title: "Ретраи и circuit breaker (Polly)"
+        codeRefs:
+          - repo: App-vNext/Polly
+            path: src/Polly.Core/CircuitBreaker/Controller/CircuitStateController.cs
+            symbol: "public Task OnHandledOutcomeAsync("
+          - repo: App-vNext/Polly
+            path: src/Polly.Core/Retry/RetryResilienceStrategy.cs
+            symbol: "ExecuteCore<TState>("
+
+  - number: 6
+    title: Наблюдаемость и диагностика
+    priority: 2
+    topics:
+      - id: obs.structured-logging
+        title: "Структурированное логирование, Serilog, correlation id"
+        codeRefs:
+          - repo: serilog/serilog
+            path: src/Serilog/Context/LogContext.cs
+            symbol: "public static IDisposable PushProperty("
+      - id: obs.metrics
+        title: "Метрики: Prometheus и Grafana"
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/System.Diagnostics.DiagnosticSource/src/System/Diagnostics/Metrics/Meter.cs
+            symbol: "CreateCounter<T>("
+      - id: obs.sentry
+        title: "Sentry"
+      - id: obs.health-checks
+        title: "Health checks: liveness и readiness"
+        codeRefs:
+          - repo: dotnet/aspnetcore
+            path: src/HealthChecks/HealthChecks/src/DefaultHealthCheckService.cs
+            symbol: "CheckHealthAsync("
+      - id: obs.opentelemetry
+        title: "Трассировка: OpenTelemetry"
+      - id: obs.dumps
+        title: "Дампы процессов: dotnet-dump, dotnet-counters, dotnet-trace, поиск утечек памяти и дедлоков"
+        status: gap
+
+  - number: 7
+    title: C# и .NET основы
+    priority: 3
+    topics:
+      - id: net.gc
+        title: "GC и поколения"
+      - id: net.struct-vs-class
+        title: "struct vs class, readonly struct, boxing"
+      - id: net.idisposable
+        title: "IDisposable и using"
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/System.Private.CoreLib/src/System/IO/Stream.cs
+            symbol: "public void Dispose("
+      - id: net.linq
+        title: "LINQ: отложенное выполнение, IEnumerable vs IQueryable"
+        codeRefs:
+          - repo: dotnet/runtime
+            path: src/libraries/System.Linq/src/System/Linq/Where.cs
+            symbol: "public static IEnumerable<TSource> Where<TSource>("
+      - id: net.ef-core
+        title: "EF Core: N+1, tracking, AsNoTracking, миграции"
+        codeRefs:
+          - repo: dotnet/efcore
+            path: src/EFCore/Extensions/EntityFrameworkQueryableExtensions.cs
+            symbol: "AsNoTracking<TEntity>("
+      - id: net.solid
+        title: "SOLID на примерах из прода"
+
+  - number: 8
+    title: Code review
+    priority: 2
+    topics:
+      - id: review.async-pitfalls
+        title: "Блокировки в async, async void, .Result и .Wait()"
+        status: gap
+      - id: review.exceptions-resources
+        title: "Проглоченные исключения, утечки ресурсов"
+      - id: review.atomicity
+        title: "Неатомарные операции"
+        status: gap
+      - id: review.readability
+        title: "Нарушения наименований, слишком длинные методы"

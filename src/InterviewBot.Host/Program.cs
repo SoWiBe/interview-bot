@@ -1,5 +1,6 @@
 using InterviewBot.Host.Telegram;
 using InterviewBot.Infrastructure;
+using InterviewBot.Infrastructure.Telegram;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Serilog;
 
@@ -16,22 +17,22 @@ try
         .ReadFrom.Services(services)
         .Enrich.FromLogContext());
 
-    var postgresConnectionString = builder.Configuration.GetConnectionString("Postgres")
-        ?? throw new InvalidOperationException("Connection string 'Postgres' is not configured.");
-
-    builder.Services.AddHealthChecks()
-        .AddNpgSql(postgresConnectionString, name: "postgres", tags: ["ready"]);
-
-    builder.Services.AddTelegram(builder.Configuration);
+    builder.Services.AddInfrastructure(builder.Configuration);
     builder.Services.AddHostedService<TelegramPollingService>();
 
+    builder.Services.AddHealthChecks()
+        .AddNpgSql(builder.Configuration.GetConnectionString("Postgres")!, name: "postgres", tags: ["ready"])
+        .AddCheck<TelegramPollingHealthCheck>("telegram-polling", tags: ["ready"]);
+
     var app = builder.Build();
+
+    await app.Services.InitializeInfrastructureAsync();
 
     app.UseSerilogRequestLogging();
 
     // liveness: процесс жив и отвечает, внешние зависимости не проверяем
     app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
-    // readiness: зависимости доступны, можно работать
+    // readiness: БД доступна и polling получает апдейты
     app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 
     await app.RunAsync();

@@ -5,10 +5,20 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Anthropic" Version="12.53.0" />
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" Version="10.0.12" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.10.0" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" Version="10.0.12" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <PackageReference Include="Quartz.Extensions.Hosting" Version="3.22.3" />
+    <PackageReference Include="Quartz.Serialization.SystemTextJson" Version="3.22.3" />
     <PackageReference Include="Telegram.Bot" Version="22.10.3.2" />
+    <PackageReference Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>
-
+  <ItemGroup>
+    <EmbeddedResource Include="Persistence/quartz_tables_postgres.sql" />
+  </ItemGroup>
 
 </Project>
