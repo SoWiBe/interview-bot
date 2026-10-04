@@ -25,6 +25,8 @@ services:
     env_file: .env
     environment:
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=interview_bot;Username=interview_bot;Password=${POSTGRES_PASSWORD}"
+    volumes:
+      - ./seed:/app/seed:ro
     ports:
       - "127.0.0.1:8080:8080"
 

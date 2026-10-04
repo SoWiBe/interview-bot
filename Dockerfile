@@ -14,6 +14,8 @@ RUN dotnet publish src/InterviewBot.Host/InterviewBot.Host.csproj -c Release -o 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app .
+# программа по умолчанию; docker-compose монтирует ./seed поверх, чтобы правки не требовали пересборки
+COPY seed/ seed/
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
 USER $APP_UID
