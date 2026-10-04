@@ -56,7 +56,7 @@ public static class MessageRenderer
         return Pack(blocks);
     }
 
-    public static IReadOnlyList<string> Review(AttemptReview review)
+    public static IReadOnlyList<string> Review(AttemptReview review, TaskLanguage language)
     {
         var questionsMark = review.AskedClarifyingQuestions ? "✅" : "❌";
         var blocks = new List<string>
@@ -78,7 +78,7 @@ public static class MessageRenderer
 
         if (!string.IsNullOrWhiteSpace(review.ImprovedCode))
         {
-            blocks.Add(CodeBlock(review.ImprovedCode));
+            blocks.Add(CodeBlock(review.ImprovedCode, CodeLanguage(language)));
         }
 
         return Pack(blocks);
@@ -93,12 +93,14 @@ public static class MessageRenderer
             blocks.Add($"{Bold("Уточняющие вопросы")}\n" + string.Join("\n", task.ExpectedQuestions.Select(q => "• " + InlineMarkdown(q))));
         }
 
-        blocks.Add(CodeBlock(task.ReferenceSolution, task.Language == TaskLanguage.Sql ? "sql" : "csharp"));
+        blocks.Add(CodeBlock(task.ReferenceSolution, CodeLanguage(task.Language)));
         blocks.AddRange(FromMarkdownLite(task.SolutionExplanation));
         blocks.Add($"{Bold("Сложность")}: {InlineMarkdown(task.Complexity)}");
 
         return Pack(blocks);
     }
+
+    private static string CodeLanguage(TaskLanguage language) => language == TaskLanguage.Sql ? "sql" : "csharp";
 
     public static InlineKeyboardMarkup FeedbackKeyboard(Guid digestId) => new(
     [

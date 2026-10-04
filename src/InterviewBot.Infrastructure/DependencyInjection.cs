@@ -1,3 +1,4 @@
+using System.ClientModel;
 using System.Net.Http.Headers;
 using Anthropic;
 using InterviewBot.Infrastructure.Common;
@@ -15,6 +16,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenAI;
+using OpenAI.Chat;
 using Quartz;
 using Telegram.Bot;
 
@@ -69,19 +72,51 @@ public static class DependencyInjection
 
     private static void AddContentGeneration(this IServiceCollection services, IConfiguration configuration)
     {
-        services.AddOptions<AnthropicOptions>()
-            .Bind(configuration.GetSection(AnthropicOptions.SectionName))
-            .ValidateDataAnnotations()
-            .ValidateOnStart();
+        var provider = configuration.GetSection(ContentOptions.SectionName).Get<ContentOptions>()?.Provider
+            ?? new ContentOptions().Provider;
 
-        // SDK сам ретраит 429/5xx/сетевые ошибки — Polly поверх не вешаем, чтобы не получить ретраи в квадрате
-        services.AddSingleton(sp => new AnthropicClient
+        // Оба SDK сами ретраят 429/5xx/сетевые ошибки — Polly поверх не вешаем, чтобы не получить ретраи в квадрате.
+        // Валидируются настройки только выбранного провайдера: ключ второго не обязателен.
+        switch (provider)
         {
-            ApiKey = sp.GetRequiredService<IOptions<AnthropicOptions>>().Value.ApiKey,
-            MaxRetries = 3,
-            Timeout = TimeSpan.FromMinutes(5),
-        });
-        services.AddSingleton<IContentGenerator, AnthropicContentGenerator>();
+            case ContentProvider.Anthropic:
+                services.AddOptions<AnthropicOptions>()
+                    .Bind(configuration.GetSection(AnthropicOptions.SectionName))
+                    .ValidateDataAnnotations()
+                    .ValidateOnStart();
+
+                services.AddSingleton(sp => new AnthropicClient
+                {
+                    ApiKey = sp.GetRequiredService<IOptions<AnthropicOptions>>().Value.ApiKey,
+                    MaxRetries = 3,
+                    Timeout = TimeSpan.FromMinutes(5),
+                });
+                services.AddSingleton<IContentGenerator, AnthropicContentGenerator>();
+                break;
+
+            case ContentProvider.OpenAICompatible:
+                services.AddOptions<OpenAICompatibleOptions>()
+                    .Bind(configuration.GetSection(OpenAICompatibleOptions.SectionName))
+                    .ValidateDataAnnotations()
+                    .ValidateOnStart();
+
+                services.AddSingleton(sp =>
+                {
+                    var o = sp.GetRequiredService<IOptions<OpenAICompatibleOptions>>().Value;
+                    return new ChatClient(o.Model, new ApiKeyCredential(o.ApiKey), new OpenAIClientOptions
+                    {
+                        Endpoint = new Uri(o.BaseUrl),
+                        // генерация набора с размышлениями модели может идти дольше дефолтных 100 секунд
+                        NetworkTimeout = TimeSpan.FromMinutes(5),
+                        UserAgentApplicationId = "interview-bot",
+                    });
+                });
+                services.AddSingleton<IContentGenerator, OpenAICompatibleContentGenerator>();
+                break;
+
+            default:
+                throw new InvalidOperationException($"Unknown content provider '{provider}'");
+        }
     }
 
     private static void AddGitHub(this IServiceCollection services, IConfiguration configuration)

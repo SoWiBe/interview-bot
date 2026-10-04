@@ -7,7 +7,7 @@
 ## Запуск
 
 ```bash
-cp .env.example .env   # заполнить: токен бота, свой Telegram ID, ключ Anthropic (GitHub-токен — по желанию)
+cp .env.example .env   # заполнить: токен бота, свой Telegram ID, ключ OpenRouter (GitHub-токен — по желанию)
 docker compose up -d --build
 ```
 
@@ -16,7 +16,7 @@ docker compose up -d --build
 Health checks: `http://localhost:8080/health/live`, `http://localhost:8080/health/ready` (БД + живой polling).
 
 Локально без Docker для бота: `docker compose up -d postgres`, секреты через user-secrets
-(`dotnet user-secrets set "Anthropic:ApiKey" "..." --project src/InterviewBot.Host`), затем
+(`dotnet user-secrets set "OpenAICompatible:ApiKey" "..." --project src/InterviewBot.Host`), затем
 `dotnet run --project src/InterviewBot.Host`.
 
 ## Команды
@@ -44,7 +44,11 @@ Health checks: `http://localhost:8080/health/live`, `http://localhost:8080/healt
 - `src/InterviewBot.Core` — чистая логика без инфраструктуры, покрыта тестами:
   интервальное повторение (`SpacedRepetition`), выбор темы (`TopicSelector`), серия (`StreakCalculator`),
   план дня (`DailyPlanner`), идемпотентная доставка (`DigestDelivery`).
-- `src/InterviewBot.Infrastructure` — EF Core/PostgreSQL, Telegram, Anthropic (structured outputs), GitHub, Quartz.
+- `src/InterviewBot.Infrastructure` — EF Core/PostgreSQL, Telegram, генерация контента (structured outputs), GitHub, Quartz.
+
+Генерация контента выбирается в `Content:Provider`: `OpenAICompatible` — любой OpenAI-совместимый API
+(по умолчанию OpenRouter, модель `deepseek/deepseek-v4-pro-0813`; подходят и DeepSeek, Ollama) или `Anthropic`.
+Промпты, схемы ответов и проверка JSON общие (`StructuredContentGenerator`), провайдер отвечает только за вызов.
 - `src/InterviewBot.Host` — Generic Host: long polling, health checks, Serilog.
 
 Ключевые решения:

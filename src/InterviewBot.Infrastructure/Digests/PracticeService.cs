@@ -42,6 +42,7 @@ public sealed class PracticeService(
         var view = new PracticeTaskView(
             task.Language == TaskLanguage.Sql ? "sql" : "csharp", task.Statement, task.ExpectedQuestions, task.ReferenceSolution);
         var review = await generator.ReviewAttemptAsync(view, answer, cancellationToken);
+        var reviewMessages = MessageRenderer.Review(review, task.Language);
 
         db.TaskAttempts.Add(new TaskAttempt
         {
@@ -51,13 +52,13 @@ public sealed class PracticeService(
             Answer = answer,
             AskedClarifyingQuestions = review.AskedClarifyingQuestions,
             Score = Math.Clamp(review.Score, 1, 5),
-            ReviewHtml = string.Join(TelegramHtml.BlockSeparator, MessageRenderer.Review(review)),
+            ReviewHtml = string.Join(TelegramHtml.BlockSeparator, reviewMessages),
         });
         await db.SaveChangesAsync(cancellationToken);
         await progress.MarkActiveAsync(clock.Today(settings.TimeZoneId), cancellationToken);
 
         var keyboard = task.SolutionRevealedAt is null ? MessageRenderer.SolutionKeyboard(task.Id) : null;
-        await messenger.SendHtmlAsync(settings.ChatId, MessageRenderer.Review(review), keyboard, cancellationToken);
+        await messenger.SendHtmlAsync(settings.ChatId, reviewMessages, keyboard, cancellationToken);
     }
 
     public async Task RevealSolutionAsync(long chatId, PracticeTask task, CancellationToken cancellationToken)
