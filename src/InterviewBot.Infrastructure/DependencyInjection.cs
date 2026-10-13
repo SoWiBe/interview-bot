@@ -45,6 +45,7 @@ public static class DependencyInjection
         services.AddScheduling(postgres);
 
         services.AddSingleton<DigestGenerationGate>();
+        services.AddScoped<TaskSender>();
         services.AddScoped<DigestService>();
         services.AddScoped<PracticeService>();
         services.AddScoped<ProgressService>();
@@ -86,7 +87,9 @@ public static class DependencyInjection
         PooledConnectionLifetime = TimeSpan.FromMinutes(5),
         ConnectCallback = async (context, cancellationToken) =>
         {
-            var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+            // Только IPv4: у api.telegram.org есть AAAA-запись, а в сети Docker нет IPv6-маршрута —
+            // попытка по IPv6 падала с «Network is unreachable» и срывала запрос.
+            var socket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
             try
             {
                 socket.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.KeepAlive, true);
@@ -124,7 +127,7 @@ public static class DependencyInjection
                 {
                     ApiKey = sp.GetRequiredService<IOptions<AnthropicOptions>>().Value.ApiKey,
                     MaxRetries = 3,
-                    Timeout = TimeSpan.FromMinutes(5),
+                    Timeout = TimeSpan.FromMinutes(10),
                 });
                 services.AddSingleton<IContentGenerator, AnthropicContentGenerator>();
                 break;
@@ -141,8 +144,8 @@ public static class DependencyInjection
                     return new ChatClient(o.Model, new ApiKeyCredential(o.ApiKey), new OpenAIClientOptions
                     {
                         Endpoint = new Uri(o.BaseUrl),
-                        // генерация набора с размышлениями модели может идти дольше дефолтных 100 секунд
-                        NetworkTimeout = TimeSpan.FromMinutes(5),
+                        // пачка задач с размышлениями модели генерируется до 5 минут — держим двойной запас
+                        NetworkTimeout = TimeSpan.FromMinutes(10),
                         UserAgentApplicationId = "interview-bot",
                     });
                 });

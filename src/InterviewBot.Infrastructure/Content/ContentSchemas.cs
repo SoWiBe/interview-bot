@@ -12,12 +12,14 @@ internal static class ContentSchemas
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["language", "title", "statement", "expectedQuestions", "referenceSolution", "solutionExplanation", "complexity"],
+          "required": ["language", "title", "statement", "schema", "expectedQuestions", "clarifications", "referenceSolution", "solutionExplanation", "complexity"],
           "properties": {
             "language": { "type": "string", "enum": ["csharp", "sql"] },
             "title": { "type": "string" },
             "statement": { "type": "string" },
+            "schema": { "type": "string" },
             "expectedQuestions": { "type": "array", "items": { "type": "string" } },
+            "clarifications": { "type": "array", "items": { "type": "string" } },
             "referenceSolution": { "type": "string" },
             "solutionExplanation": { "type": "string" },
             "complexity": { "type": "string" }
@@ -25,26 +27,17 @@ internal static class ContentSchemas
         }
         """;
 
-    public static readonly ContentSchema DailyContent = new("daily_content", $$"""
+    public static readonly ContentSchema Theory = new("theory", """
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["theory", "tasks"],
+          "required": ["essence", "analogy", "codeExample", "codeLanguage", "selfCheckQuestions"],
           "properties": {
-            "theory": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["essence", "analogy", "productionCase", "codeExample", "codeLanguage", "selfCheckQuestions"],
-              "properties": {
-                "essence": { "type": "string" },
-                "analogy": { "type": "string" },
-                "productionCase": { "type": "string" },
-                "codeExample": { "type": "string" },
-                "codeLanguage": { "type": "string", "enum": ["csharp", "sql"] },
-                "selfCheckQuestions": { "type": "array", "items": { "type": "string" } }
-              }
-            },
-            "tasks": { "type": "array", "items": {{TaskSchema}} }
+            "essence": { "type": "string" },
+            "analogy": { "type": "string" },
+            "codeExample": { "type": "string" },
+            "codeLanguage": { "type": "string", "enum": ["csharp", "sql"] },
+            "selfCheckQuestions": { "type": "array", "items": { "type": "string" } }
           }
         }
         """);
@@ -79,17 +72,27 @@ internal static class ContentSchemas
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["askedClarifyingQuestions", "clarifyingFeedback", "missedQuestions", "correctness", "edgeCases", "complexity", "improvements", "improvedCode", "score"],
+          "required": ["verdict", "summary", "good", "fixes", "improvedCode", "askedClarifyingQuestions", "score"],
           "properties": {
-            "askedClarifyingQuestions": { "type": "boolean" },
-            "clarifyingFeedback": { "type": "string" },
-            "missedQuestions": { "type": "array", "items": { "type": "string" } },
-            "correctness": { "type": "string" },
-            "edgeCases": { "type": "string" },
-            "complexity": { "type": "string" },
-            "improvements": { "type": "string" },
+            "verdict": { "type": "string", "enum": ["works", "worksWithRemarks", "doesNotWork"] },
+            "summary": { "type": "string" },
+            "good": { "type": "array", "items": { "type": "string" } },
+            "fixes": { "type": "array", "items": { "type": "string" } },
             "improvedCode": { "type": "string" },
+            "askedClarifyingQuestions": { "type": "boolean" },
             "score": { "type": "integer" }
+          }
+        }
+        """);
+
+    public static readonly ContentSchema DialogueReply = new("dialogue_reply", """
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reply", "looksLikeSolution"],
+          "properties": {
+            "reply": { "type": "string" },
+            "looksLikeSolution": { "type": "boolean" }
           }
         }
         """);

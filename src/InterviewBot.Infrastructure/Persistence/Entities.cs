@@ -86,6 +86,13 @@ public enum TaskLanguage
     Sql,
 }
 
+/// <summary>Роль задачи в сессии: от неё зависят объём и то, есть ли в условии неоднозначность.</summary>
+public enum TaskRole
+{
+    Main,
+    Warmup,
+}
+
 public sealed class PracticeTask
 {
     public Guid Id { get; set; }
@@ -93,9 +100,24 @@ public sealed class PracticeTask
     public required string TopicId { get; set; }
     public int OrderInDigest { get; set; }
     public TaskLanguage Language { get; set; }
+    public TaskRole Role { get; set; }
+
+    /// <summary>Формат C#-задачи; у SQL-задач не задан.</summary>
+    public CSharpCategory? Category { get; set; }
+
     public required string Title { get; set; }
     public required string Statement { get; set; }
+
+    /// <summary>SQL: CREATE TABLE и пример данных. Общая для обеих SQL-задач сессии.</summary>
+    public string? Schema { get; set; }
+
     public List<string> ExpectedQuestions { get; set; } = [];
+
+    /// <summary>
+    /// Ответы интервьюера на возможные уточняющие вопросы («вопрос — ответ»). Генерируются вместе с задачей,
+    /// чтобы бот в диалоге отвечал одинаково и не расходился с эталонным решением.
+    /// </summary>
+    public List<string> Clarifications { get; set; } = [];
     public required string ReferenceSolution { get; set; }
     public required string SolutionExplanation { get; set; }
     public required string Complexity { get; set; }
@@ -104,7 +126,44 @@ public sealed class PracticeTask
     public DateTimeOffset? SentAt { get; set; }
     public DateTimeOffset? SolutionRevealedAt { get; set; }
 
+    /// <summary>Задача закрыта: нажали «Следующая задача» или «Завершить сессию». После этого сессия идёт дальше.</summary>
+    public DateTimeOffset? ClosedAt { get; set; }
+
+    /// <summary>Нажата «Отправить решение»: следующее сообщение пользователя — решение, а не вопрос.</summary>
+    public DateTimeOffset? AwaitingSolutionSince { get; set; }
+
     public List<TaskAttempt> Attempts { get; set; } = [];
+    public List<TaskMessage> Messages { get; set; } = [];
+}
+
+public enum TaskMessageKind
+{
+    /// <summary>Сообщение пользователя в диалоге: вопрос, рассуждение, черновик.</summary>
+    Question,
+
+    /// <summary>Ответ бота в диалоге.</summary>
+    Answer,
+
+    Hint,
+
+    /// <summary>Сообщение пользователя, отправленное как решение.</summary>
+    Solution,
+
+    Review,
+}
+
+/// <summary>
+/// Переписка по задаче. Нужна дважды: как история для модели и чтобы reply на любое сообщение
+/// по задаче (не только на условие) находил эту задачу.
+/// </summary>
+public sealed class TaskMessage
+{
+    public Guid Id { get; set; }
+    public Guid TaskId { get; set; }
+    public TaskMessageKind Kind { get; set; }
+    public required string Text { get; set; }
+    public int? TelegramMessageId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
 }
 
 public sealed class TaskAttempt
@@ -116,6 +175,7 @@ public sealed class TaskAttempt
     public required string Answer { get; set; }
     public bool AskedClarifyingQuestions { get; set; }
     public int Score { get; set; }
+    public int HintsUsed { get; set; }
     public required string ReviewHtml { get; set; }
 }
 

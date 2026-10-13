@@ -117,6 +117,24 @@ namespace InterviewBot.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTimeOffset?>("AwaitingSolutionSince")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("awaiting_solution_since");
+
+                    b.Property<string>("Category")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("category");
+
+                    b.PrimitiveCollection<List<string>>("Clarifications")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("clarifications");
+
+                    b.Property<DateTimeOffset?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("closed_at");
+
                     b.Property<string>("Complexity")
                         .IsRequired()
                         .HasColumnType("text")
@@ -149,6 +167,16 @@ namespace InterviewBot.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("reference_solution");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("role");
+
+                    b.Property<string>("Schema")
+                        .HasColumnType("text")
+                        .HasColumnName("schema");
 
                     b.Property<DateTimeOffset?>("SentAt")
                         .HasColumnType("timestamp with time zone")
@@ -213,6 +241,10 @@ namespace InterviewBot.Infrastructure.Persistence.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("asked_clarifying_questions");
 
+                    b.Property<int>("HintsUsed")
+                        .HasColumnType("integer")
+                        .HasColumnName("hints_used");
+
                     b.Property<string>("ReviewHtml")
                         .IsRequired()
                         .HasColumnType("text")
@@ -237,6 +269,48 @@ namespace InterviewBot.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_task_attempts_task_id");
 
                     b.ToTable("task_attempts", (string)null);
+                });
+
+            modelBuilder.Entity("InterviewBot.Infrastructure.Persistence.TaskMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("task_id");
+
+                    b.Property<int?>("TelegramMessageId")
+                        .HasColumnType("integer")
+                        .HasColumnName("telegram_message_id");
+
+                    b.Property<string>("Text")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("text");
+
+                    b.HasKey("Id")
+                        .HasName("pk_task_messages");
+
+                    b.HasIndex("TaskId")
+                        .HasDatabaseName("ix_task_messages_task_id");
+
+                    b.HasIndex("TelegramMessageId")
+                        .HasDatabaseName("ix_task_messages_telegram_message_id");
+
+                    b.ToTable("task_messages", (string)null);
                 });
 
             modelBuilder.Entity("InterviewBot.Infrastructure.Persistence.Topic", b =>
@@ -384,6 +458,16 @@ namespace InterviewBot.Infrastructure.Persistence.Migrations
                     b.Navigation("Task");
                 });
 
+            modelBuilder.Entity("InterviewBot.Infrastructure.Persistence.TaskMessage", b =>
+                {
+                    b.HasOne("InterviewBot.Infrastructure.Persistence.PracticeTask", null)
+                        .WithMany("Messages")
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_task_messages_practice_tasks_task_id");
+                });
+
             modelBuilder.Entity("InterviewBot.Infrastructure.Persistence.Topic", b =>
                 {
                     b.OwnsMany("InterviewBot.Infrastructure.Persistence.CodeRef", "CodeRefs", b1 =>
@@ -436,6 +520,8 @@ namespace InterviewBot.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("InterviewBot.Infrastructure.Persistence.PracticeTask", b =>
                 {
                     b.Navigation("Attempts");
+
+                    b.Navigation("Messages");
                 });
 
             modelBuilder.Entity("InterviewBot.Infrastructure.Persistence.Topic", b =>

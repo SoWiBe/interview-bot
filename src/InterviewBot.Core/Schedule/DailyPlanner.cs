@@ -14,7 +14,7 @@ public enum WeekendMode
 
 public enum DailyPlan
 {
-    /// <summary>Теория + код из репозитория + две задачи.</summary>
+    /// <summary>Утренняя сессия: теория и три задачи по очереди.</summary>
     Full,
 
     /// <summary>Одна задача-повторение.</summary>
