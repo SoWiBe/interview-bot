@@ -24,6 +24,15 @@ public sealed class OpenAICompatibleOptions
 
     [Range(1024, 64000)]
     public int MaxTokens { get; init; } = 16000;
+
+    /// <summary>
+    /// Сколько модели «думать» перед ответом при генерации задач, теории и ревью (none, minimal, low, medium, high).
+    /// Без ограничения рассуждающая модель тратит на одну задачу тысячи токенов и минуты. Пусто — не передавать.
+    /// </summary>
+    public string ReasoningEffort { get; init; } = "low";
+
+    /// <summary>То же для ответов в диалоге и подсказок: там нужен быстрый ответ, а не глубокий.</summary>
+    public string DialogueReasoningEffort { get; init; } = "none";
 }
 
 public sealed class OpenAICompatibleContentGenerator(
@@ -40,6 +49,14 @@ public sealed class OpenAICompatibleContentGenerator(
             ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
                 schema.Name, BinaryData.FromString(schema.Json), jsonSchemaIsStrict: true),
         };
+
+        var effort = purpose is "dialogue" or "hint" ? options.Value.DialogueReasoningEffort : options.Value.ReasoningEffort;
+        if (!string.IsNullOrWhiteSpace(effort))
+        {
+#pragma warning disable OPENAI001 // параметр reasoning_effort в SDK помечен как экспериментальный
+            completionOptions.ReasoningEffortLevel = new ChatReasoningEffortLevel(effort);
+#pragma warning restore OPENAI001
+        }
 
         ChatMessage[] messages = [new SystemChatMessage(systemPrompt), new UserChatMessage(userPrompt)];
 

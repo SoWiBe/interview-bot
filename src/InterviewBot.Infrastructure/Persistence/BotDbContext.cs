@@ -10,6 +10,7 @@ public sealed class BotDbContext(DbContextOptions<BotDbContext> options) : DbCon
     public DbSet<Digest> Digests => Set<Digest>();
     public DbSet<PracticeTask> PracticeTasks => Set<PracticeTask>();
     public DbSet<TaskAttempt> TaskAttempts => Set<TaskAttempt>();
+    public DbSet<TaskMessage> TaskMessages => Set<TaskMessage>();
     public DbSet<DayLog> DayLogs => Set<DayLog>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
@@ -55,6 +56,13 @@ public sealed class BotDbContext(DbContextOptions<BotDbContext> options) : DbCon
             e.HasIndex(x => x.TelegramMessageId);
             e.HasIndex(x => x.CreatedAt);
             e.HasMany(x => x.Attempts).WithOne(x => x.Task).HasForeignKey(x => x.TaskId);
+            e.HasMany(x => x.Messages).WithOne().HasForeignKey(x => x.TaskId);
+        });
+
+        modelBuilder.Entity<TaskMessage>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.TelegramMessageId);
         });
 
         modelBuilder.Entity<TaskAttempt>(e => e.HasKey(x => x.Id));

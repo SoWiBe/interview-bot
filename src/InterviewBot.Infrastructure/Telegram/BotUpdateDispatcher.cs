@@ -34,8 +34,8 @@ public sealed class BotUpdateDispatcher(
 {
     private static readonly BotCommand[] Commands =
     [
-        new("today", "Утренний набор сейчас"),
-        new("next", "Ещё задача по текущей теме"),
+        new("today", "Утренняя сессия сейчас"),
+        new("next", "Ещё задача: SQL или C#"),
         new("topic", "Внеочередная тема: /topic <название>"),
         new("giveup", "Показать решение задачи"),
         new("stats", "Прогресс"),
@@ -45,18 +45,24 @@ public sealed class BotUpdateDispatcher(
     ];
 
     private const string HelpText = """
-        Каждое утро присылаю теорию по одной теме, фрагмент кода из реального open-source проекта и задачи в формате live coding.
+        Каждое утро — одна сессия: короткая теория и три задачи по очереди.
 
-        Как проходит день:
-        1. Теория — прочитай и отметь тему кнопкой: ✅ Понял (повторим через 3 → 7 → 21 день), 🔁 Повторить (завтра), ❌ Пробел (в начало очереди).
-        2. Код из реального проекта — разбор приёма, который стоит забрать себе.
-        3. Две задачи отдельными сообщениями. Решаешь каждую reply на её сообщение: сначала уточняющие вопросы, потом решение. Я сделаю ревью.
-        4. Под ревью — «Показать решение», «Ещё задача», «Новая тема».
-        В выходные по умолчанию одна задача на повторение без теории (/settings weekend full — полный набор).
+        Как проходит сессия:
+        0. Теория на 2 минуты. Отметь тему кнопкой: ✅ Понял (повторим через 3 → 7 → 21 день), 🔁 Повторить (завтра), ❌ Пробел (в начало очереди).
+        1. SQL-разогрев, ~5 минут.
+        2. Основная SQL-задача на той же схеме.
+        3. Задача на C#: алгоритмы, потоки, «напиши код», «найди баг», коллекции — по кругу.
+        Следующая задача приходит после кнопки «Следующая задача».
 
-        /today — утренний набор сейчас
-        /next — ещё задача по текущей теме
-        /topic <название> — внеочередная тема
+        Вопросы и решение:
+        • Любое сообщение по задаче — это разговор: уточняй условие, обсуждай идею. Оценки за это нет.
+        • Чтобы сдать — нажми «📤 Отправить решение» и пришли решение следующим сообщением. Только тогда будет ревью с оценкой.
+        • «💡 Подсказка» — следующий шаг, «🏳 Показать решение» — эталон с разбором.
+        В выходные по умолчанию одна задача на повторение (/settings weekend full — полная сессия).
+
+        /today — сессия сейчас или напоминание, на каком ты шаге
+        /next — ещё задача вне сессии: SQL или C#
+        /topic <название> — теория и задача по выбранной теме
         /giveup — показать решение задачи (можно reply на задачу)
         /stats — прогресс
         /pause <дней> — пауза без потери серии, /pause 0 — снять
@@ -138,15 +144,8 @@ public sealed class BotUpdateDispatcher(
             return;
         }
 
-        // Любой текст без команды — попытка решить задачу
-        var task = await practice.FindTaskAsync(message.ReplyToMessage?.MessageId, cancellationToken);
-        if (task is null)
-        {
-            await messenger.SendTextAsync(chatId, "Не понял, к какой задаче это. Ответь reply на сообщение с задачей.", cancellationToken);
-            return;
-        }
-
-        await practice.ReviewAttemptAsync(user, task, text, cancellationToken);
+        // Текст без команды — разговор по задаче; решением он становится только после «Отправить решение»
+        await practice.HandleTextAsync(user, text, message.MessageId, message.ReplyToMessage?.MessageId, cancellationToken);
     }
 
     private async Task StartAsync(Message message, CancellationToken cancellationToken)
@@ -158,7 +157,7 @@ public sealed class BotUpdateDispatcher(
         await messenger.SendTextAsync(
             settings.ChatId,
             $"Привет! Я твой помощник для подготовки к собеседованиям.\n\n" +
-            $"Набор приходит каждый день в {settings.SendTime:HH\\:mm} ({settings.TimeZoneId}). Хочешь начать прямо сейчас — /today.\n\n{HelpText}",
+            $"Сессия приходит каждый день в {settings.SendTime:HH\\:mm} ({settings.TimeZoneId}). Хочешь начать прямо сейчас — /today.\n\n{HelpText}",
             cancellationToken);
 
         // меню команд — удобство, а не обязательная часть регистрации: его сбой не должен ломать /start
@@ -185,33 +184,36 @@ public sealed class BotUpdateDispatcher(
         var today = clock.Today(settings.TimeZoneId);
         if (!await digests.HasDailyAsync(today, cancellationToken))
         {
-            await messenger.SendTextAsync(settings.ChatId, "⏳ Готовлю набор на сегодня, это займёт пару минут…", cancellationToken);
+            await messenger.SendTextAsync(settings.ChatId, "⏳ Готовлю сессию на сегодня. Теория придёт сразу, как будет готова, задачи — через несколько минут.", cancellationToken);
             await messenger.TypingAsync(settings.ChatId, cancellationToken);
         }
 
         var result = await digests.RunDailyAsync(settings, manual: true, cancellationToken);
-        if (result.NothingNew)
+        if (result is { NothingNew: true, Digest: { } digest })
         {
-            await messenger.SendTextAsync(
-                settings.ChatId, "Набор на сегодня уже отправлен ✅ Листай чат выше. Хочешь ещё задачу — /next", cancellationToken);
+            // сессия уже идёт: напоминаем текущий шаг или досылаем задачу, которая не ушла из-за сбоя
+            await practice.ContinueSessionAsync(settings, digest.Id, announceWaiting: true, cancellationToken);
         }
     }
 
-    private async Task NextAsync(UserSettings settings, CancellationToken cancellationToken)
+    private Task NextAsync(UserSettings settings, CancellationToken cancellationToken) =>
+        messenger.SendHtmlAsync(settings.ChatId, ["Какую задачу дать?"], MessageRenderer.ExtraTaskKeyboard, cancellationToken);
+
+    private async Task ExtraTaskAsync(UserSettings settings, TaskLanguage language, CancellationToken cancellationToken)
     {
-        await messenger.SendTextAsync(settings.ChatId, "⏳ Готовлю ещё задачу по текущей теме…", cancellationToken);
-        var task = await practice.SendNextTaskAsync(settings, cancellationToken);
+        await messenger.SendTextAsync(settings.ChatId, "⏳ Готовлю задачу…", cancellationToken);
+        var task = await practice.SendExtraTaskAsync(settings, language, cancellationToken);
         if (task is null)
         {
             await messenger.SendTextAsync(settings.ChatId, "Пока нет текущей темы. Начни с /today или /topic", cancellationToken);
         }
     }
 
-    /// <summary>«📚 Новая тема»: следующая тема из очереди — полный набор с теорией и задачами.</summary>
+    /// <summary>«📚 Новая тема»: следующая тема из очереди — теория и задача по ней.</summary>
     private async Task NewTopicAsync(UserSettings settings, CancellationToken cancellationToken)
     {
         var topic = await digests.SelectNextTopicAsync(settings, cancellationToken);
-        await messenger.SendTextAsync(settings.ChatId, $"⏳ Готовлю тему «{topic.Title}», это займёт пару минут…", cancellationToken);
+        await messenger.SendTextAsync(settings.ChatId, $"⏳ Готовлю тему «{topic.Title}». Теория придёт сразу, как будет готова, задача — чуть позже.", cancellationToken);
         await messenger.TypingAsync(settings.ChatId, cancellationToken);
         await digests.RunManualAsync(settings, topic, cancellationToken);
     }
@@ -242,14 +244,15 @@ public sealed class BotUpdateDispatcher(
             return;
         }
 
-        await messenger.SendTextAsync(settings.ChatId, $"⏳ Готовлю тему «{topic.Title}»…", cancellationToken);
+        await messenger.SendTextAsync(settings.ChatId, $"⏳ Готовлю тему «{topic.Title}». Теория придёт сразу, как будет готова, задача — чуть позже.", cancellationToken);
         await messenger.TypingAsync(settings.ChatId, cancellationToken);
         await digests.RunManualAsync(settings, topic, cancellationToken);
     }
 
     private async Task GiveUpAsync(UserSettings settings, int? replyToMessageId, CancellationToken cancellationToken)
     {
-        var task = await practice.FindTaskAsync(replyToMessageId, cancellationToken);
+        var task = await practice.FindTaskByMessageAsync(replyToMessageId, cancellationToken)
+            ?? await practice.FindCurrentTaskAsync(cancellationToken);
         if (task is null)
         {
             await messenger.SendTextAsync(settings.ChatId, "Нет открытых задач. Ответь /giveup reply на задачу, если нужна конкретная.", cancellationToken);
@@ -273,6 +276,7 @@ public sealed class BotUpdateDispatcher(
             .AppendLine($"🔥 Серия: {Bold($"{stats.Streak} дн.")}")
             .AppendLine($"❓ Задал уточняющие вопросы: {Bold(questionsShare)} задач ({stats.TasksWithQuestions} из {stats.AttemptedTasks})")
             .AppendLine($"⭐ Средняя оценка: {(stats.AverageScore is { } avg ? $"{avg:0.0}/5" : "—")}")
+            .AppendLine($"🏁 Сессий пройдено полностью: {Bold(stats.CompletedSessions.ToString())}")
             .AppendLine()
             .AppendLine(Bold("Темы"))
             .AppendLine($"❌ Пробел: {Count(TopicStatus.Gap)}")
@@ -300,7 +304,7 @@ public sealed class BotUpdateDispatcher(
         var until = await progress.PauseAsync(settings, days, clock.Today(settings.TimeZoneId), cancellationToken);
         var reply = until is { } date
             ? $"⏸ Пауза до {date:dd.MM} включительно. Серия не сгорит. Вернуться раньше — /pause 0"
-            : "▶️ Пауза снята, завтра утром пришлю набор.";
+            : "▶️ Пауза снята, завтра утром пришлю сессию.";
         await messenger.SendTextAsync(settings.ChatId, reply, cancellationToken);
     }
 
@@ -345,7 +349,7 @@ public sealed class BotUpdateDispatcher(
         var settings = await settingsService.GetAsync(cancellationToken);
         if (settings is null)
         {
-            await bot.AnswerCallbackQuery(callback.Id, "Сначала /start", cancellationToken: cancellationToken);
+            await AnswerAsync(callback, "Сначала /start", cancellationToken: cancellationToken);
             return;
         }
 
@@ -359,14 +363,14 @@ public sealed class BotUpdateDispatcher(
                 _ => "Набор не найден",
             };
 
-            await bot.AnswerCallbackQuery(callback.Id, answer, cancellationToken: cancellationToken);
+            await AnswerAsync(callback, answer, cancellationToken: cancellationToken);
             await RemovePressedRowAsync(callback, cancellationToken);
             return;
         }
 
         if (CallbackData.TryParseSolution(data, out var taskId))
         {
-            await bot.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
+            await AnswerAsync(callback, cancellationToken: cancellationToken);
             await RemovePressedRowAsync(callback, cancellationToken);
 
             var task = await practice.GetTaskAsync(taskId, cancellationToken);
@@ -378,9 +382,73 @@ public sealed class BotUpdateDispatcher(
             return;
         }
 
+        if (CallbackData.TryParseSubmit(data, out var submitTaskId))
+        {
+            // кнопку под задачей не убираем: решение можно отправлять несколько раз
+            await AnswerAsync(callback, cancellationToken: cancellationToken);
+            if (await practice.GetTaskAsync(submitTaskId, cancellationToken) is { } task)
+            {
+                await practice.StartAwaitingSolutionAsync(settings.ChatId, task, cancellationToken);
+            }
+
+            return;
+        }
+
+        if (CallbackData.TryParseCancelSubmit(data, out var cancelTaskId))
+        {
+            await practice.CancelAwaitingSolutionAsync(cancelTaskId, cancellationToken);
+            await AnswerAsync(callback, "Ок, это не решение. Спрашивай.", cancellationToken: cancellationToken);
+            await RemovePressedRowAsync(callback, cancellationToken);
+            return;
+        }
+
+        if (CallbackData.TryParseHint(data, out var hintTaskId))
+        {
+            await AnswerAsync(callback, cancellationToken: cancellationToken);
+            if (await practice.GetTaskAsync(hintTaskId, cancellationToken) is { } task)
+            {
+                await practice.GiveHintAsync(settings, task, cancellationToken);
+            }
+
+            return;
+        }
+
+        if (CallbackData.TryParseCheckMessage(data, out var messageId))
+        {
+            await AnswerAsync(callback, cancellationToken: cancellationToken);
+            // убираем кнопку до ревью: повторное нажатие во время долгого запроса не создаст вторую попытку
+            await RemovePressedRowAsync(callback, cancellationToken);
+            if (!await practice.SubmitMessageAsSolutionAsync(settings, messageId, cancellationToken))
+            {
+                await messenger.SendTextAsync(settings.ChatId, "Это сообщение уже проверено как решение.", cancellationToken);
+            }
+
+            return;
+        }
+
+        if (CallbackData.TryParseAdvance(data, out var advanceTaskId))
+        {
+            await AnswerAsync(callback, cancellationToken: cancellationToken);
+            await RemovePressedRowAsync(callback, cancellationToken);
+            if (await practice.GetTaskAsync(advanceTaskId, cancellationToken) is { } task)
+            {
+                await practice.AdvanceAsync(settings, task, cancellationToken);
+            }
+
+            return;
+        }
+
+        if (data is CallbackData.ExtraSql or CallbackData.ExtraCSharp)
+        {
+            await AnswerAsync(callback, cancellationToken: cancellationToken);
+            await RemovePressedRowAsync(callback, cancellationToken);
+            await ExtraTaskAsync(settings, data == CallbackData.ExtraSql ? TaskLanguage.Sql : TaskLanguage.CSharp, cancellationToken);
+            return;
+        }
+
         if (data is CallbackData.NextTask or CallbackData.NewTopic)
         {
-            await bot.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
+            await AnswerAsync(callback, cancellationToken: cancellationToken);
             // Убираем кнопки до генерации: повторное нажатие во время долгого запроса не запустит её второй раз
             await RemovePressedRowAsync(callback, cancellationToken);
 
@@ -390,7 +458,23 @@ public sealed class BotUpdateDispatcher(
             return;
         }
 
-        await bot.AnswerCallbackQuery(callback.Id, cancellationToken: cancellationToken);
+        await AnswerAsync(callback, cancellationToken: cancellationToken);
+    }
+
+    /// <summary>
+    /// Гасит «часики» на кнопке. Это косметика: если Telegram в этот момент недоступен,
+    /// само действие кнопки всё равно должно выполниться, а не оборваться на подтверждении.
+    /// </summary>
+    private async Task AnswerAsync(CallbackQuery callback, string? text = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            await bot.AnswerCallbackQuery(callback.Id, text, cancellationToken: cancellationToken);
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(ex, "Failed to answer callback query {CallbackId}", callback.Id);
+        }
     }
 
     /// <summary>

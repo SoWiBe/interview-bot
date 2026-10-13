@@ -12,6 +12,9 @@ public sealed class GitHubOptions
     /// <summary>Personal access token (только чтение публичных репозиториев). Без него лимит — 60 запросов в час.</summary>
     public string? Token { get; init; }
 
+    /// <summary>Блок «код из реального проекта» в утренней сессии. По умолчанию выключен: сессия и без него плотная.</summary>
+    public bool SnippetEnabled { get; init; }
+
     [Range(1, 8)]
     public int MaxParallelRequests { get; init; } = 2;
 

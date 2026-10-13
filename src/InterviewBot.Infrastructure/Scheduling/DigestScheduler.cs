@@ -8,6 +8,10 @@ public sealed class DigestScheduler(ISchedulerFactory schedulerFactory, ILogger<
 {
     public static readonly JobKey JobKey = new("daily-digest", "digest");
     private static readonly TriggerKey DailyTriggerKey = new("daily-digest-trigger", "digest");
+    private static readonly TriggerKey PrepareTriggerKey = new("daily-digest-prepare-trigger", "digest");
+
+    /// <summary>За сколько до времени отправки начинать генерацию: она занимает минуты, а сессия должна прийти вовремя.</summary>
+    public static readonly TimeSpan PrepareLead = TimeSpan.FromMinutes(15);
 
     /// <summary>
     /// Создаёт или обновляет ежедневный триггер по настройкам пользователя.
@@ -17,12 +21,13 @@ public sealed class DigestScheduler(ISchedulerFactory schedulerFactory, ILogger<
     public async Task EnsureScheduledAsync(UserSettings settings, CancellationToken cancellationToken)
     {
         var scheduler = await schedulerFactory.GetScheduler(cancellationToken);
-        var cron = $"0 {settings.SendTime.Minute} {settings.SendTime.Hour} ? * *";
+        var cron = Cron(settings.SendTime);
+        // TimeOnly.Add переходит через полночь: для отправки в 00:05 подготовка встанет на 23:50
+        var prepareCron = Cron(settings.SendTime.Add(-PrepareLead));
         var zone = TimeZoneInfo.FindSystemTimeZoneById(settings.TimeZoneId);
 
-        if (await scheduler.GetTrigger(DailyTriggerKey, cancellationToken) is ICronTrigger existing
-            && existing.CronExpressionString == cron
-            && existing.TimeZone.Id == zone.Id)
+        if (await IsScheduledAsync(scheduler, DailyTriggerKey, cron, zone, cancellationToken)
+            && await IsScheduledAsync(scheduler, PrepareTriggerKey, prepareCron, zone, cancellationToken))
         {
             return;
         }
@@ -40,9 +45,25 @@ public sealed class DigestScheduler(ISchedulerFactory schedulerFactory, ILogger<
             .WithCronSchedule(cron, b => b.InTimeZone(zone).WithMisfireHandlingInstructionFireAndProceed())
             .Build();
 
-        await scheduler.ScheduleJob(job, [trigger], replace: true, cancellationToken);
+        // Подготовка: если сервис лежал, навёрстывать её незачем — основной запуск сгенерирует набор сам
+        var prepareTrigger = TriggerBuilder.Create()
+            .WithIdentity(PrepareTriggerKey)
+            .ForJob(JobKey)
+            .UsingJobData(DailyDigestJob.ModeKey, DailyDigestJob.PrepareMode)
+            .WithCronSchedule(prepareCron, b => b.InTimeZone(zone).WithMisfireHandlingInstructionDoNothing())
+            .Build();
+
+        await scheduler.ScheduleJob(job, [trigger, prepareTrigger], replace: true, cancellationToken);
         logger.LogInformation("Daily digest scheduled at {SendTime} {TimeZone}", settings.SendTime, settings.TimeZoneId);
     }
+
+    private static string Cron(TimeOnly time) => $"0 {time.Minute} {time.Hour} ? * *";
+
+    private static async Task<bool> IsScheduledAsync(
+        IScheduler scheduler, TriggerKey key, string cron, TimeZoneInfo zone, CancellationToken cancellationToken) =>
+        await scheduler.GetTrigger(key, cancellationToken) is ICronTrigger existing
+        && existing.CronExpressionString == cron
+        && existing.TimeZone.Id == zone.Id;
 
     public async Task ScheduleRetryAsync(int attempt, TimeSpan delay, CancellationToken cancellationToken)
     {

@@ -7,7 +7,8 @@ using Quartz;
 namespace InterviewBot.Infrastructure.Scheduling;
 
 /// <summary>
-/// Утренний набор. Сам по себе джоб может сработать дважды (misfire + обычный запуск, ретрай, /today параллельно) —
+/// Утренняя сессия: за <see cref="DigestScheduler.PrepareLead"/> до времени отправки готовит набор, в назначенное время отправляет.
+/// Сам по себе джоб может сработать дважды (misfire + обычный запуск, ретрай, /today параллельно) —
 /// от двойной отправки защищает не он, а DigestDelivery с атомарным захватом в БД.
 /// DisallowConcurrentExecution — лишь дополнительная страховка внутри одного планировщика.
 /// </summary>
@@ -20,6 +21,8 @@ public sealed class DailyDigestJob(
     ILogger<DailyDigestJob> logger) : IJob
 {
     public const string AttemptKey = "attempt";
+    public const string ModeKey = "mode";
+    public const string PrepareMode = "prepare";
     private const int MaxAttempts = 3;
     private static readonly TimeSpan RetryDelay = TimeSpan.FromMinutes(15);
 
@@ -32,6 +35,21 @@ public sealed class DailyDigestJob(
         if (settings is null)
         {
             logger.LogInformation("Daily digest skipped: user is not registered yet");
+            return;
+        }
+
+        if (context.MergedJobDataMap.GetString(ModeKey) == PrepareMode)
+        {
+            try
+            {
+                await digests.PrepareDailyAsync(settings, DigestScheduler.PrepareLead, cancellationToken);
+            }
+            catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                // не страшно: основной запуск в назначенное время сгенерирует набор сам, со своими ретраями
+                logger.LogWarning(ex, "Failed to prepare daily digest in advance");
+            }
+
             return;
         }
 

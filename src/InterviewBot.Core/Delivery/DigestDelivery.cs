@@ -5,6 +5,8 @@ public enum DigestPart
 {
     Theory,
     Snippet,
+
+    /// <summary>Первая задача. Следующие отправляются по одной по ходу сессии и учитываются на самих задачах.</summary>
     Tasks,
 }
 

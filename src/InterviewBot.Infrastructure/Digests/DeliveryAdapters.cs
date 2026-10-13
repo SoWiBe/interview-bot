@@ -48,11 +48,10 @@ internal sealed class DbDeliveryClaimStore(BotDbContext db, BotClock clock) : ID
 }
 
 internal sealed class TelegramDigestPartSender(
-    BotDbContext db,
     BotMessenger messenger,
+    TaskSender taskSender,
     Digest digest,
-    long chatId,
-    BotClock clock) : IDigestPartSender
+    long chatId) : IDigestPartSender
 {
     public async Task SendAsync(Guid digestId, DigestPart part, CancellationToken cancellationToken)
     {
@@ -67,14 +66,10 @@ internal sealed class TelegramDigestPartSender(
                 break;
 
             case DigestPart.Tasks:
-                var header = digest.TheoryHtml is null ? MessageRenderer.ReviewTaskHeader : null;
-                // по одной задаче на сообщение: reply на сообщение однозначно указывает на задачу
-                foreach (var task in digest.Tasks.OrderBy(t => t.OrderInDigest).Where(t => t.SentAt is null))
+                // только первая задача: остальные приходят по одной, когда закрыта предыдущая (PracticeService.ContinueSessionAsync)
+                if (digest.Tasks.OrderBy(t => t.OrderInDigest).FirstOrDefault() is { } first)
                 {
-                    task.TelegramMessageId = await messenger.SendHtmlAsync(
-                        chatId, MessageRenderer.Task(task, task.OrderInDigest, header), null, cancellationToken);
-                    task.SentAt = clock.UtcNow;
-                    await db.SaveChangesAsync(cancellationToken);
+                    await taskSender.SendAsync(chatId, first, digest.Tasks, DigestService.TaskHeader(digest), cancellationToken);
                 }
 
                 break;

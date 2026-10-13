@@ -21,7 +21,8 @@ public sealed record StatsReport(
     int Streak,
     int AttemptedTasks,
     int TasksWithQuestions,
-    double? AverageScore);
+    double? AverageScore,
+    int CompletedSessions);
 
 public sealed class ProgressService(BotDbContext db)
 {
@@ -123,6 +124,10 @@ public sealed class ProgressService(BotDbContext db)
         var asked = await perTask.CountAsync(x => x.Asked, cancellationToken);
         var averageScore = attempted > 0 ? await perTask.AverageAsync(x => (double)x.BestScore, cancellationToken) : (double?)null;
 
+        // сессия пройдена, когда закрыты все её задачи; наборы из одной задачи (выходные) сессией не считаются
+        var completedSessions = await db.Digests.CountAsync(
+            d => d.Kind == DigestKind.Daily && d.Tasks.Count > 1 && d.Tasks.All(t => t.ClosedAt != null), cancellationToken);
+
         return new StatsReport(
             byStatus,
             mastered,
@@ -130,6 +135,7 @@ public sealed class ProgressService(BotDbContext db)
             StreakCalculator.Calculate(days, today),
             attempted,
             asked,
-            averageScore);
+            averageScore,
+            completedSessions);
     }
 }
