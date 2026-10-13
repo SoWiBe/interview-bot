@@ -1,4 +1,4 @@
-# Сервер: готовый образ (его загружает scripts/deploy.sh), без сборки и без портов наружу —
+# Сервер: образ собирается на месте из исходников, которые привозит scripts/deploy.sh; портов наружу нет —
 # на хосте уже живёт другой backend, его 5432 и 8080 не трогаем.
 services:
   postgres:
@@ -17,6 +17,7 @@ services:
       retries: 10
 
   bot:
+    build: .
     image: interview-bot:latest
     restart: unless-stopped
     depends_on:
