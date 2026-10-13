@@ -1,0 +1,37 @@
+# Сервер: готовый образ (его загружает scripts/deploy.sh), без сборки и без портов наружу —
+# на хосте уже живёт другой backend, его 5432 и 8080 не трогаем.
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: interview_bot
+      POSTGRES_USER: interview_bot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U interview_bot -d interview_bot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  bot:
+    image: interview-bot:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=interview_bot;Username=interview_bot;Password=${POSTGRES_PASSWORD}"
+    volumes:
+      - ./seed:/app/seed:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres-data:
