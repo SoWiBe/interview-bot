@@ -29,7 +29,9 @@ public sealed class DailyDigestJob(
     public async Task Execute(IJobExecutionContext context)
     {
         var cancellationToken = context.CancellationToken;
-        var attempt = int.TryParse(context.MergedJobDataMap.GetString(AttemptKey), out var parsed) ? parsed : 1;
+        // TryGetString, а не GetString: у ежедневных триггеров этих ключей нет, и GetString на отсутствующем ключе бросает
+        var data = context.MergedJobDataMap;
+        var attempt = data.TryGetString(AttemptKey, out var rawAttempt) && int.TryParse(rawAttempt, out var parsed) ? parsed : 1;
 
         var settings = await settingsService.GetAsync(cancellationToken);
         if (settings is null)
@@ -38,7 +40,7 @@ public sealed class DailyDigestJob(
             return;
         }
 
-        if (context.MergedJobDataMap.GetString(ModeKey) == PrepareMode)
+        if (data.TryGetString(ModeKey, out var mode) && mode == PrepareMode)
         {
             try
             {
